@@ -1,0 +1,48 @@
+name: Deploy Nutanix NC2 Infrastructure
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  terraform:
+    name: Terraform Validation & Apply
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup HashiCorp Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.0
+
+      - name: Terraform Format Check
+        run: terraform fmt -check
+
+      - name: Initialize Terraform Working Directory
+        run: terraform init
+        env:
+          NUTANIX_USER: ${{ secrets.NUTANIX_USER }}
+          NUTANIX_PASSWORD: ${{ secrets.NUTANIX_PASSWORD }}
+          NUTANIX_ENDPOINT: ${{ secrets.NUTANIX_ENDPOINT }}
+
+      - name: Terraform Plan
+        run: terraform plan -input=false
+        env:
+          NUTANIX_USER: ${{ secrets.NUTANIX_USER }}
+          NUTANIX_PASSWORD: ${{ secrets.NUTANIX_PASSWORD }}
+          NUTANIX_ENDPOINT: ${{ secrets.NUTANIX_ENDPOINT }}
+
+      - name: Terraform Apply
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: terraform apply -auto-approve -input=false
+        env:
+          NUTANIX_USER: ${{ secrets.NUTANIX_USER }}
+          NUTANIX_PASSWORD: ${{ secrets.NUTANIX_PASSWORD }}
+          NUTANIX_ENDPOINT: ${{ secrets.NUTANIX_ENDPOINT }}
