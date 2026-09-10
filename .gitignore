@@ -15,5 +15,11 @@ override.tf.json
 *_override.tf
 *_override.tf.json
 
+# Terraform plan files and cache
+*.tfplan
+plan-*
+plan.out
+.terraform.lock.hcl
+
 001.md
-README.md
+README.md   
