@@ -1,38 +1,100 @@
-# Read existing target AWS VPC infrastructure
-data "aws_vpc" "selected" {
-  id = var.aws_vpc_id
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  owners      = ["amazon"]
+
+  filter {
+    name   = "name"
+    values = ["al2023-ami-2023.*-x86_64"]
+  }
 }
 
-data "aws_subnet" "baremetal_subnet" {
-  id = var.aws_subnet_id
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name = "vpc"
+  }
 }
 
-# Provisioning virtual machines on the NC2 cluster in AWS
-resource "nutanix_virtual_machine" "app_workload" {
-  name                 = "aws-nc2-app-vm-01"
-  cluster_uuid         = var.nc2_cluster_uuid
-  num_vcpus_per_socket = 2
-  num_sockets          = 2
-  memory_size_mib      = 8192
+resource "aws_subnet" "public" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  map_public_ip_on_launch = true
 
-  nic_list {
-    subnet_uuid = var.nutanix_overlay_subnet_uuid
+  tags = {
+    Name = "public-subnet"
+  }
+}
+
+resource "aws_internet_gateway" "gw" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "igw"
+  }
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.gw.id
   }
 
-  disk_list {
-    disk_size_bytes = 52428800000 # 50 GB in bytes
+  tags = {
+    Name = "public-rt"
+  }
+}
 
-    device_properties {
-      device_type = "DISK"
-      disk_address = {
-        device_index = 0
-        adapter_type = "SCSI"
-      }
-    }
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
 
-    data_source_reference = {
-      kind = "image"
-      uuid = var.ubuntu_image_uuid
-    }
+resource "aws_security_group" "web_sg" {
+  name        = "web-sg"
+  description = "Allow inbound HTTP and SSH traffic"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "web-sg"
+  }
+}
+
+resource "aws_instance" "demo_nodes" {
+  count                  = var.instance_count
+  ami                    = data.aws_ami.amazon_linux.id
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.web_sg.id]
+
+  tags = {
+    Name = "demo-node-${count.index + 1}"
   }
 }
